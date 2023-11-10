@@ -49,6 +49,7 @@ def write_to_db(request: Request):
     body = str(request.body())
     v = body.split('\n')
     client = Client(
+        host=str(client_host),
         domain=v[0],
         machine=v[1],
         username=v[2],
