@@ -5,6 +5,8 @@ from sqlalchemy.engine import URL
 from sqlalchemy import Column, Integer, String, DateTime, Text, LargeBinary
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
+from sqlalchemy.orm import sessionmaker
+
 
 # Простенький сервер
 
