@@ -9,16 +9,25 @@
 
 #include <sstream>
 #include <fstream>
+#include <vector>
 #include <codecvt>
 
+#include <comdef.h>
+
 // А этот костыль этот самый скриншот считывает
-std::wstring ReadBitmap(const WCHAR* filename)
-{
-    std::wifstream wif(filename);
-    wif.imbue(std::locale(std::locale::empty(), new std::codecvt_utf8<wchar_t>));
-    std::wstringstream wss;
-    wss << wif.rdbuf();
-    return wss.str();
+std::string ReadBitmap(const WCHAR* filename) {
+    std::ifstream inFile(filename, std::ios_base::binary);
+
+    inFile.seekg(0, std::ios_base::end);
+    size_t length = inFile.tellg();
+    inFile.seekg(0, std::ios_base::beg);
+
+    std::vector<char> buffer;
+    buffer.reserve(length);
+    std::copy(std::istreambuf_iterator<char>(inFile),
+    std::istreambuf_iterator<char>(),
+    std::back_inserter(buffer));
+    return std::string(buffer.begin(), buffer.end());
 }
 
 // Костыль, чтобы получить фотку. Надо будет подумать как всё сделать inmemory

