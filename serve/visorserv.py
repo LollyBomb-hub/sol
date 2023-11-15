@@ -38,6 +38,10 @@ def capture_routes(request: Request, full_path: str):
     print(request.client.host, request.body(), full_path)
 
 @app.post("/ua")
+async def list_users():
+    return sess.query(ActivityEntry).all()
+
+@app.post("/ua")
 async def write_to_db(request: Request):
     client_host = request.client.host
     body = await request.body()
